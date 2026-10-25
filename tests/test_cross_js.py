@@ -26,7 +26,7 @@ OPTION_SETS = [
     {"quotes": "keys"},
     {"separator": True},
     {"condense": 60},
-    {"bracesSameLine": True},
+    {"bracesSameLine": True}, {"bracesSameLine": True, "space": 4}, {"bracesSameLine": True, "space": "\t"},
     {"emitRootBraces": False},
     {"multiline": "off"},
     {"multiline": "no-tabs"},

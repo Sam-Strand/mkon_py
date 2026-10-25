@@ -253,10 +253,9 @@ class _Stringifier:
         # so a value starting with whitespace needs the block form
         if len(a) == 1 and not a[0].startswith("'") and not a[0].endswith("'") and not a[0][:1] <= " ":
             return self.wrap(token["mstr"], a[0])
-        # The reader takes the block indent from the column of the opening '''.
-        # For an object value (not shallow) that column must equal current_gap,
-        # so ''' always goes on its own line, even with braces_same_line.
-        res = ("" if (same_line and shallow) else eol + current_gap) + token["mstr"][0]
+        # The reader strips the smallest indent of the lines and of the closing ''' (written
+        # at current_gap), so the opening ''' may stay after the key with braces_same_line.
+        res = ("" if same_line else eol + current_gap) + token["mstr"][0]
         for line in a:
             res += eol
             if line:
@@ -457,9 +456,10 @@ class _Stringifier:
 
             self.wrap_len = 0
             v = value[k]
+            qk = self.quote_key(k) + token["col"][0]
             vs = self.str(v, bool(comments) and ca)
             partial.append(
-                self.quote_key(k) + token["col"][0] + ("" if _starts_with_nl(vs) else " ") + vs
+                qk + ("" if _starts_with_nl(vs) else " ") + vs
                 + (o.separator if setsep else "")
             )
 

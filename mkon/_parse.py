@@ -74,7 +74,9 @@ _TFNNS_PLAIN_RE = re.compile(r"[^\r\n,{}\[\]/]+")
 #: обычные символы строки в кавычках
 _STRING_PLAIN_RE = {'"': re.compile(r'[^"\\\n\r]+'), "'": re.compile(r"[^'\\\n\r]+")}
 #: обычные символы внутри '''-строки
-_ML_PLAIN_RE = re.compile(r"[^'\n\r]+")
+# отступ строки внутри ''' / строка, в которой есть текст
+_ML_INDENT_RE = re.compile(r"^[\x00-\x09\x0b-\x20]*")
+_ML_TEXT_RE = re.compile(r"[^\x00-\x09\x0b-\x20]")
 #: обычные символы ключа без кавычек
 _KEY_PLAIN_RE = re.compile(r"[^\x00-\x20{}\[\],:]+")
 _ROOT_DATETIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:")
@@ -178,59 +180,36 @@ class _Parser:
         self.error("Bad string")
 
     def ml_string(self) -> str:
-        string = []
-        triple = 0
+        """Многострочная строка; мы сразу за открывающими '''.
 
-        # we are at ''' +1 - get indent
-        indent = 0
-        while True:
-            c = self.peek(-indent - 5)
-            if not c or c == "\n":
-                break
-            indent += 1
+        Общий отступ — наименьший отступ среди непустых строк и строки закрывающих '''
+        (если перед ними только пробелы). Колонка открывающих ''' не важна. \\r отбрасывается.
+        """
+        start = self.at - 1
+        end = self.text.find("'''", start)
+        if end < 0:
+            self.jump(self.n)
+            self.error("Bad multiline string")
+        self.jump(end + 3)
 
-        def skip_indent():
-            skip = indent
-            while self.ch and self.ch <= " " and self.ch != "\n":
-                if skip <= 0:
-                    break
-                skip -= 1
-                self.next()
+        raw = self.text[start:end].replace("\r", "")
+        nl = raw.find("\n")
+        # текст сразу после открывающих ''' (однострочная форма или первая строка)
+        first = _ML_INDENT_RE.sub("", raw if nl < 0 else raw[:nl], count=1)
+        if nl < 0:
+            return from_units(first)
 
-        # skip white/to (newline)
-        while self.ch and self.ch <= " " and self.ch != "\n":
-            self.next()
-        if self.ch == "\n":
-            self.next()
-            skip_indent()
-
-        while True:
-            ch = self.ch
-            if not ch:
-                self.error("Bad multiline string")
-            elif ch == "'":
-                triple += 1
-                self.next()
-                if triple == 3:
-                    if string and string[-1] == "\n":
-                        string.pop()  # remove last EOL
-                    return from_units("".join(string))
-                continue
-            else:
-                while triple > 0:
-                    string.append("'")
-                    triple -= 1
-            if self.ch == "\n":
-                string.append("\n")
-                self.next()
-                skip_indent()
-            elif self.ch == "\r":
-                self.next()
-            else:
-                # обычные символы до кавычки / конца строки — пачкой
-                m = _ML_PLAIN_RE.match(self.text, self.at - 1)
-                string.append(m.group())
-                self.jump(m.end())
+        lines = raw[nl + 1:].split("\n")
+        closing_alone = not _ML_TEXT_RE.search(lines[-1])
+        leads = [_ML_INDENT_RE.match(line).end() for line in lines]
+        base = min([lead for line, lead in zip(lines, leads) if _ML_TEXT_RE.search(line)]
+                   + ([leads[-1]] if closing_alone else []), default=0)
+        if closing_alone:
+            lines.pop()
+        out = [line[min(base, lead):] for line, lead in zip(lines, leads)]
+        if first:
+            out.insert(0, first)
+        return from_units("\n".join(out))
 
     def keyname(self) -> str:
         if self.ch in ('"', "'"):
