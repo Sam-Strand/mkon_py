@@ -58,7 +58,7 @@ mkon.loads("[NaN, Infinity]", parse_constant=lambda s: None)  # [None, None]
 |---|---|---|
 | `quotes` | `"min"` | `"min"` — кавычки только где нужны, `"keys"`, `"strings"`, `"all"` |
 | `quote_char` | `'"'` | или `"'"` |
-| `separator` | `False` | запятые между элементами (строки тогда в кавычках) |
+| `separator` | `False` | запятые между элементами |
 | `braces_same_line` | `False` | `{` / `[` на строке с ключом |
 | `root_braces` | `True` | фигурные скобки вокруг корневого объекта |
 | `condense` | `0` | уместить объект/массив в одну строку, если он короче N символов |

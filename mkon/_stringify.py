@@ -137,7 +137,7 @@ def _decimal_to_string(d: Decimal) -> str:
 
 class _Ctx:
     __slots__ = ("mind", "eol_mind", "eol_gap", "prefix", "partial", "cpartial", "cdisabled",
-                 "save_quote_strings", "save_multiline", "iseparator", "cwrap_len")
+                 "save_multiline", "iseparator", "cwrap_len")
 
 
 class _Stringifier:
@@ -348,7 +348,6 @@ class _Stringifier:
         ctx.partial = []
         ctx.cpartial = [] if o.condense else None
         ctx.cdisabled = False
-        ctx.save_quote_strings = self.quote_strings
         ctx.save_multiline = self.multiline
         ctx.iseparator = "" if o.separator else self.token["com"][0]
         ctx.cwrap_len = 0
@@ -356,12 +355,10 @@ class _Stringifier:
 
     def condensed_string(self, v, ctx) -> str:
         self.wrap_len = 0
-        self.quote_strings = True
         self.multiline = 0
         try:
             return self.str(v, False, True)
         finally:
-            self.quote_strings = ctx.save_quote_strings
             self.multiline = ctx.save_multiline
 
     def finish(self, ctx, tk, count, comments) -> str:
@@ -489,12 +486,10 @@ class _Stringifier:
     def condensed_string_obj(self, v, ctx) -> str:
         # в объекте JS вызывает str(v, false) — без noIndent
         self.wrap_len = 0
-        self.quote_strings = True
         self.multiline = 0
         try:
             return self.str(v, False)
         finally:
-            self.quote_strings = ctx.save_quote_strings
             self.multiline = ctx.save_multiline
 
     # ------------------------------------------------------------------ root
@@ -548,7 +543,7 @@ def dumps(
     Аргументы mkon (те же, что в mkon-js):
 
     * `quotes` — 'min' (кавычки только где нужны), 'keys', 'strings' или 'all';
-    * `quote_char` — '"' или "'"; `separator` — запятые между элементами (включает кавычки у строк);
+    * `quote_char` — '"' или "'"; `separator` — запятые между элементами;
     * `braces_same_line` — `{` / `[` на строке с ключом; `root_braces` — фигурные скобки у корня;
     * `condense` — уместить объект/массив в одну строку, если он короче (0 — выключено);
     * `multiline` — 'std' (многострочные строки в тройных кавычках), 'no-tabs' (то же,

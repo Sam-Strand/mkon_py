@@ -148,7 +148,7 @@ class DumpsTests(unittest.TestCase):
         self.assertEqual(mkon.dumps(v, indent=4, sort_keys=True),
                          "{\n    a: 1\n    b:\n    {\n        x:\n        [\n            1\n            y z\n        ]\n    }\n}\n")
         self.assertEqual(mkon.dumps(v, indent="\t", root_braces=False, braces_same_line=True, condense=40),
-                         "b: {\n\tx: [1, \"y z\"]\n}\na: 1\n")
+                         "b: {\n\tx: [1, y z]\n}\na: 1\n")
         self.assertEqual(mkon.dumps({"a": 1}, eol="\r\n"), "{\r\n  a: 1\r\n}\r\n")
         self.assertEqual(mkon.dumps({"a": "x"}, quotes="all", quote_char="'"), "{\n  'a': 'x'\n}\n")
 

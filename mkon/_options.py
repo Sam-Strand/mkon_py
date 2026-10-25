@@ -62,7 +62,7 @@ def make_options(
         raise ValueError(f"condense must be an int >= 0, not {condense!r}")
 
     separator = bool(separator)
-    quote_strings = quotes in ("all", "strings") or separator
+    quote_strings = quotes in ("all", "strings")
     ml = _MULTILINE[multiline]
     if quote_strings:
         ml = 0
