@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkon"
+version = "0.2.0"
+description = "mkon — human-friendly config format (Python implementation, equivalent to mkon-js)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Садовский М.К." }]
+dependencies = []
+
+[project.scripts]
+mkon = "mkon.tool:main"
+
+[tool.setuptools]
+packages = ["mkon"]
+
+[tool.setuptools.package-data]
+mkon = ["py.typed"]
