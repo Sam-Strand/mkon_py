@@ -391,3 +391,58 @@ def force_comment(text: str) -> str:
                 break
         j += 1
     return "\n".join(lines)
+
+
+def is_pair_separator(text: str, i: int) -> bool:
+    """Разделяет ли `,` (text[i]) пары внутри quoteless-значения объекта?
+
+    Только если дальше в той же строке идут ключ и `:`, или ничего, кроме комментария:
+    `a: P пара, кг/см2` → "P пара, кг/см2"; `a: x, y, b: 1` → a = "x, y"; `a: x,  // c` → a = "x".
+    Ключ без кавычек — текст без {}[],: и переводов строки; в кавычках — "…", '…' или '''…'''.
+    Нужна и парсеру, и stringify (когда значение объекта нужно брать в кавычки).
+    """
+    n = len(text)
+    j = i + 1
+    while j < n and text[j] <= " " and text[j] not in "\n\r":
+        j += 1
+    if j >= n:
+        return True
+    c = text[j]
+    if c in "\n\r}]":
+        return True
+    if c == "/" and j + 1 < n and text[j + 1] in "/*":
+        return True
+    if c in "\"'":
+        return _quoted_key_follows(text, j)
+    while j < n:
+        c = text[j]
+        if c == ":":
+            return True
+        if c in ",{}[]\n\r":
+            return False
+        j += 1
+    return False
+
+
+def _quoted_key_follows(text: str, j: int) -> bool:
+    q, n = text[j], len(text)
+    if q == "'" and text.startswith("'''", j):
+        e = text.find("'''", j + 3)
+        if e < 0:
+            return False
+        j = e + 3
+    else:
+        j += 1
+        while True:
+            if j >= n or text[j] in "\n\r":
+                return False
+            if text[j] == "\\":
+                j += 2
+                continue
+            if text[j] == q:
+                j += 1
+                break
+            j += 1
+    while j < n and text[j] <= " " and text[j] != "\n":
+        j += 1
+    return j < n and text[j] == ":"

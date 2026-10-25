@@ -21,11 +21,15 @@ from ._common import (
     force_comment,
     get_comment,
     is_date,
+    is_pair_separator,
     js_key_order,
+    js_trim,
     js_lstrip,
     js_rstrip,
     looks_like_iso_date,
     number_to_string,
+    parse_iso_date,
+    parse_special_number,
     try_parse_number,
     utf16_len,
     utf16_sort_key,
@@ -85,23 +89,55 @@ _NEEDS_QUOTES = re.compile(
 _STARTS_WITH_KEYWORD = re.compile(
     r"^(true|false|null|NaN|[+-]?Infinity)" + _WS + r"*((,|\]|\}|//|/\*)" + JS_DOT + r"*)?\Z"
 )
-_NEEDS_ESCAPE_NAME = re.compile(r"[,\{\[\}\]" + JS_WS_CLASS + r":\"']|//|/\*")
+# ключ без кавычек может содержать пробелы внутри, но не {}[],: кавычки, начало комментария и переводы строк
+_NEEDS_ESCAPE_NAME = re.compile(
+    "^" + _WS + "|" + _WS + r"\Z|[,{}\[\]:\"'\x00-\x1f" + _COMMON_RANGE + r"]|//|/\*"
+)
 
 
-def _breaks_quoteless(s: str) -> bool:
+def _breaks_quoteless(s: str, in_object: bool = False) -> bool:
     """Обрежет ли парсер эту строку, если записать её без кавычек?"""
     depth = 0
-    for c in s:
+    for i, c in enumerate(s):
         if c in ("{", "["):
             depth += 1
         elif c in ("}", "]"):
             if depth == 0:
                 return True
             depth -= 1
-        elif c == "," and depth == 0:
+        elif c == "," and depth == 0 and (not in_object or is_pair_separator(s, i)):
             return True
     # an unclosed bracket would swallow the rest of the line
     return depth > 0
+
+
+def _object_literal(s: str) -> bool:
+    """Примет ли парсер это значение объекта (без запятых-разделителей и лишних скобок) за литерал?
+
+    Проверяет весь текст и каждую часть перед началом комментария — как парсер. Запятая
+    в значении объекта — текст, так что "1,5" и "true, x" остаются строками.
+    """
+    cands = [s]
+    k = s.find("/")
+    while k >= 0:
+        if s[k + 1:k + 2] in ("/", "*") and s[k + 1:k + 2]:
+            cands.append(s[:k])
+        k = s.find("/", k + 1)
+    for v in cands:
+        t, c = js_trim(v), v[:1]
+        if t in ("true", "false", "null"):
+            return True
+        if parse_special_number(t) is not None:
+            return True
+        if c == "-" or ("0" <= c <= "9" and c):
+            if try_parse_number(v) is not None:
+                return True
+            try:
+                if parse_iso_date(t) is not None:
+                    return True
+            except ValueError:
+                return True
+    return False
 
 
 def _starts_with_nl(s: str) -> bool:
@@ -227,13 +263,15 @@ class _Stringifier:
         if not string:
             return self.wrap(token["qstr"], "")
 
+        in_object = not no_indent and not is_root_object
         if (
             self.quote_strings or has_comment
             or _NEEDS_QUOTES.search(string)
-            or _breaks_quoteless(string)
-            or try_parse_number(string, True) is not None
-            or _STARTS_WITH_KEYWORD.match(string)
-            or looks_like_iso_date(string)
+            or _breaks_quoteless(string, in_object)
+            or (_object_literal(string) if in_object else (
+                try_parse_number(string, True) is not None
+                or _STARTS_WITH_KEYWORD.match(string)
+                or looks_like_iso_date(string)))
             or (is_root_object and ":" in string)
         ):
             if not self.needs_escape.search(string):
@@ -267,8 +305,23 @@ class _Stringifier:
         if not name:
             return token["qkey"][0] + token["qkey"][1]
         if self.o.quote_keys or _NEEDS_ESCAPE_NAME.search(name):
-            return self.wrap(token["qkey"], self.quote_replace(name) if self.needs_escape.search(name) else name)
+            if not self.needs_escape.search(name):
+                return self.wrap(token["qkey"], name)
+            # ключ с переводами строк пишется блоком ''' (те же правила, что у значения)
+            if self.multiline and "\n" in name and not self.needs_escape_ml.search(name):
+                return self.ml_key(name)
+            return self.wrap(token["qkey"], self.quote_replace(name))
         return self.wrap(token["key"], name)
+
+    def ml_key(self, name: str) -> str:
+        # открывающие и закрывающие ''' — в колонке ключа: парсер срежет ровно gap
+        token, eol, gap = self.token, self.o.eol, self.gap
+        res = token["mstr"][0]
+        for line in name.split("\n"):
+            res += eol
+            if line:
+                res += gap + line
+        return res + eol + gap + token["mstr"][1]
 
     # ------------------------------------------------------------ dispatch
 
@@ -457,6 +510,8 @@ class _Stringifier:
             self.wrap_len = 0
             v = value[k]
             qk = self.quote_key(k) + token["col"][0]
+            if cpartial is not None and "\n" in qk:
+                ctx.cdisabled = True
             vs = self.str(v, bool(comments) and ca)
             partial.append(
                 qk + ("" if _starts_with_nl(vs) else " ") + vs

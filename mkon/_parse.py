@@ -22,6 +22,7 @@ from ._common import (
     create_comment,
     from_units,
     get_comment,
+    is_pair_separator,
     js_rstrip,
     js_trim,
     parse_iso_date,
@@ -78,7 +79,10 @@ _STRING_PLAIN_RE = {'"': re.compile(r'[^"\\\n\r]+'), "'": re.compile(r"[^'\\\n\r
 _ML_INDENT_RE = re.compile(r"^[\x00-\x09\x0b-\x20]*")
 _ML_TEXT_RE = re.compile(r"[^\x00-\x09\x0b-\x20]")
 #: обычные символы ключа без кавычек
-_KEY_PLAIN_RE = re.compile(r"[^\x00-\x20{}\[\],:]+")
+# ключ без кавычек: всё до ':', кроме скобок, ',' и переводов строки
+_KEY_PLAIN_RE = re.compile(r"[^\n\r{}\[\],:]*")
+# контекст quoteless-строки
+IN_ARRAY, IN_OBJECT = 1, 2
 _ROOT_DATETIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:")
 _PUNCTUATORS = frozenset("{}[],:")
 
@@ -212,38 +216,44 @@ class _Parser:
         return from_units("\n".join(out))
 
     def keyname(self) -> str:
+        """Ключ: строка в кавычках ("…", '…' или '''…''') или текст без кавычек до ':'.
+
+        Ключ без кавычек может содержать пробелы, но не {}[],: и переводы строки.
+        """
         if self.ch in ('"', "'"):
-            return self.string(False)
+            return self.string(True)
 
         text = self.text
-        name = ""
-        start = self.at
-        space = -1
-        while True:
-            ch = self.ch
-            if ch == ":":
-                if not name:
-                    self.error("Found ':' but no key name (for an empty key name use quotes)")
-                elif space >= 0 and space != len(name):
-                    self.at = start + space
-                    self.error("Found whitespace in your key name (use quotes to include)")
+        start = self.at - 1
+        end = _KEY_PLAIN_RE.match(text, start).end() if start < self.n else start
+        if end > start:
+            self.jump(end)
+        name = text[start:end]
+        k = len(name)
+        while k > 0 and name[k - 1] <= " ":  # пробелы перед ':' — не часть ключа
+            k -= 1
+        name = name[:k]
+
+        ch = self.ch
+        if ch == ":":
+            if not name:
+                self.error("Found ':' but no key name (for an empty key name use quotes)")
+            return from_units(name)
+        if not ch:
+            self.error("Found EOF while looking for a key name (check your syntax)")
+        if ch in ("\n", "\r"):
+            # ':' может стоять на следующей строке: "key\n  : value"
+            lb = self.at
+            while self.ch and self.ch <= " ":
+                self.next()
+            if self.ch == ":" and name:
                 return from_units(name)
-            elif ch <= " ":
-                if not ch:
-                    self.error("Found EOF while looking for a key name (check your syntax)")
-                elif space < 0:
-                    space = len(name)
-            elif ch in _PUNCTUATORS:
-                self.error(
-                    "Found '" + ch + "' where a key name was expected (check your syntax or use quotes "
-                    "if the key name includes {}[],: or whitespace)"
-                )
-            else:
-                m = _KEY_PLAIN_RE.match(text, self.at - 1)
-                name += m.group()
-                self.jump(m.end())
-                continue
-            self.next()
+            self.at = lb
+            self.error("Found a line break while looking for ':' after the key name (check your syntax)")
+        self.error(
+            "Found '" + ch + "' where a key name was expected (check your syntax or use quotes "
+            "if the key name includes {}[],: or a line break)"
+        )
 
     def white(self):
         ch = self.ch
@@ -280,7 +290,8 @@ class _Parser:
             self.next()
             ch = self.ch
             is_eol = ch in ("\r", "\n", "")
-            is_sep = ch in (",", "}", "]") and ch != ""
+            is_sep = (ch in ("}", "]") and ch != "") or (
+                ch == "," and (in_container != IN_OBJECT or depth > 0 or is_pair_separator(text, self.at - 1)))
             ends_string = is_eol or (in_container and is_sep and depth == 0)
             if ends_string or is_sep or (ch == "/" and self.peek(0) in ("/", "*") and self.peek(0) != ""):
                 v = text[start:self.at - 1]
@@ -397,7 +408,7 @@ class _Parser:
                 return arr
 
             while self.ch:
-                arr.append(self.value(True))
+                arr.append(self.value(IN_ARRAY))
                 c_at = self.at
                 self.white()
                 # the comma is optional and trailing commas are allowed
@@ -461,7 +472,7 @@ class _Parser:
                     self.error("Expected ':' instead of '" + self.ch + "'")
                 self.next()
                 # duplicate keys overwrite the previous value (and keep its position)
-                value = self.value(True)
+                value = self.value(IN_OBJECT)
                 obj[key] = value
                 if pairs is not None:
                     pairs.append((key, value))

@@ -70,16 +70,16 @@ class LoadsTests(unittest.TestCase):
 
 class DecodeErrorTests(unittest.TestCase):
     def test_like_json_decode_error(self):
-        doc = "{\n  a: 1\n  b c: 2\n}"
+        doc = "{\n  a: 1\n  b c\n  d: 2\n}"
         with self.assertRaises(mkon.MkonDecodeError) as cm:
             mkon.loads(doc)
         e = cm.exception
         self.assertIsInstance(e, ValueError)
-        self.assertEqual(e.msg, "Found whitespace in your key name (use quotes to include)")
+        self.assertEqual(e.msg, "Found a line break while looking for ':' after the key name (check your syntax)")
         self.assertEqual(e.doc, doc)
-        self.assertEqual((e.lineno, e.colno), (3, 4))
-        self.assertEqual(doc[e.pos], " ")
-        self.assertIn("line 3 column 4", str(e))
+        self.assertEqual((e.lineno, e.colno), (3, 6))
+        self.assertEqual(doc[e.pos], "\n")
+        self.assertIn("line 3 column 6", str(e))
 
     def test_position_counts_python_characters(self):
         doc = "{ k😀😀: [1, 2 }"
